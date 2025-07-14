@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from abc.dummy_module import dummy_function, dummy_var
+from transporter_controller.dummy_module import dummy_function, dummy_var
 import rclpy
 from rclpy.node import Node
 
