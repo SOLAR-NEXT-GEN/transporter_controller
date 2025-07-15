@@ -28,6 +28,9 @@ ament_python_install_package(${PROJECT_NAME})
 # Install Python executables
 install(PROGRAMS
   scripts/dummy_script.py
+  scripts/diff_pure_pursit.py
+  scripts/path_scheduler.py
+  scripts/straight_path_generator.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
