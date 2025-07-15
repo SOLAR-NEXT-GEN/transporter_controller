@@ -106,6 +106,7 @@ class StraightPathGenerator(Node):
         self.path_generated = True
         
         self.publish_timer = self.create_timer(0.1, self.publish_path)
+        self.publish_count = 0
         
         self.visualize_path()
         
@@ -116,37 +117,17 @@ class StraightPathGenerator(Node):
         return response
         
     def publish_path(self):
-        if not self.current_path or not self.path_generated:
+        if not self.current_path:
             return
             
-        robot_x, robot_y, robot_yaw = self.get_robot_pose()
-        if robot_x is None:
-            return
-            
-        # Find closest waypoint to robot
-        min_dist = float('inf')
-        closest_idx = 0
+        self.current_path.header.stamp = self.get_clock().now().to_msg()
+        self.path_pub.publish(self.current_path)
         
-        for i, pose in enumerate(self.current_path.poses):
-            dist = math.sqrt(
-                (pose.pose.position.x - robot_x)**2 + 
-                (pose.pose.position.y - robot_y)**2
-            )
-            if dist < min_dist:
-                min_dist = dist
-                closest_idx = i
+        self.publish_count += 1
         
-        # Create path starting from closest point
-        windowed_path = Path()
-        windowed_path.header.frame_id = 'map'
-        windowed_path.header.stamp = self.get_clock().now().to_msg()
-        
-        # Add waypoints from closest point to end
-        for i in range(closest_idx, len(self.current_path.poses)):
-            windowed_path.poses.append(self.current_path.poses[i])
-            
-        # Publish windowed path
-        self.path_pub.publish(windowed_path)
+        if self.publish_count >= 20:
+            self.get_logger().info('Path published successfully, stopping publisher')
+            self.publish_timer.cancel()
             
     def visualize_path(self):
         if not self.current_path:
