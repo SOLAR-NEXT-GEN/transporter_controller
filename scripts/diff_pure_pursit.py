@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Path, Odometry
 from geometry_msgs.msg import Twist
+from std_srvs.srv import SetBool
 import tf2_ros
 import numpy as np
 import math
@@ -34,6 +35,10 @@ class DiffPurePursuitPathFollower(Node):
         self.path_received_time = None
         
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        self.create_service(SetBool, 'pure_pursuit_toggle', self.toggle_cb)
+
+        self.active = True
         
         self.path_sub = self.create_subscription(
             Path,
@@ -45,7 +50,16 @@ class DiffPurePursuitPathFollower(Node):
         self.control_timer = self.create_timer(0.05, self.control_loop)
         
         self.get_logger().info('Pure Pursuit Path Follower initialized')
-        
+
+    def toggle_cb(self, req: SetBool.Request, resp: SetBool.Response):
+        self.active = req.data
+        if not self.active:
+            self.cmd_vel_pub.publish(Twist())
+        resp.success = True
+        resp.message = 'enabled' if self.active else 'disabled'
+        print(f'Pure Pursuit Path Follower {resp.message}')
+        return resp
+    
     def path_callback(self, msg):
         """Store the received path"""
         current_time = self.get_clock().now()
@@ -134,6 +148,9 @@ class DiffPurePursuitPathFollower(Node):
         
     def control_loop(self):
         """Main control loop"""
+        if not self.active:
+            return
+        
         robot_x, robot_y, robot_yaw = self.get_robot_pose()
         
         if robot_x is None or not self.current_path:
@@ -174,14 +191,14 @@ class DiffPurePursuitPathFollower(Node):
             self.log_counter = 0
         
         self.log_counter += 1
-        if self.log_counter >= 20:
-            self.log_counter = 0
-            if len(self.current_path.poses) > 0:
-                self.get_logger().info(
-                    f'Following path: target_idx={target_idx}/{len(self.current_path.poses)}, '
-                    f'distance_to_target={math.sqrt((target_x-robot_x)**2 + (target_y-robot_y)**2):.2f}m, '
-                    f'cmd_vel=({linear_vel:.2f}, {angular_vel:.2f})'
-                )
+        # if self.log_counter >= 20:
+        #     self.log_counter = 0
+        #     if len(self.current_path.poses) > 0:
+        #         self.get_logger().info(
+        #             f'Following path: target_idx={target_idx}/{len(self.current_path.poses)}, '
+        #             f'distance_to_target={math.sqrt((target_x-robot_x)**2 + (target_y-robot_y)**2):.2f}m, '
+        #             f'cmd_vel=({linear_vel:.2f}, {angular_vel:.2f})'
+        #         )
 
 
 def main(args=None):
