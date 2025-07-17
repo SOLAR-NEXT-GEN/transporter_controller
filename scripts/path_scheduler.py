@@ -11,11 +11,6 @@ import tf2_ros
 class PathScheduler(Node):
     def __init__(self):
         super().__init__('path_scheduler')
-        self.declare_parameter('stop_interval', 4.0)
-        self.stop_interval = max(
-            0.1,
-            self.get_parameter('stop_interval').get_parameter_value().double_value,
-        )
         
         # TF and odometry setup
         self.tf_buffer = tf2_ros.Buffer()
@@ -32,6 +27,11 @@ class PathScheduler(Node):
             Bool, '/hinge_animation_complete', self.animation_complete_callback, 10
         )
         
+        # NEW: Octopus subscriber for triangle button
+        self.octopus_sub = self.create_subscription(
+            Bool, '/octopus', self.octopus_callback, 10
+        )
+        
         # Service clients
         self.generate_path_client = self.create_client(Trigger, 'generate_straight_path')
         self.pp_client = self.create_client(SetBool, 'pure_pursuit_toggle')
@@ -44,8 +44,6 @@ class PathScheduler(Node):
         
         # State management
         self.state = 'WAITING_TO_START'  # WAITING_TO_START, RUNNING, STOPPING, LOWERING, WAITING_FOR_BUTTON, RAISING
-        self.dist_since_stop = 0.0
-        self.last_pos = None
         self.prev_x_btn = 0
         self.path_generated = False
         self.start_button_pressed = False
@@ -53,17 +51,25 @@ class PathScheduler(Node):
         self.required_ready_count = 5
         self.log_counter = 0
         
+        # Triangle button state tracking
+        self.triangle_button_pressed = False
+        self.prev_triangle_button = False
+        
         # Animation tracking
         self.animation_in_progress = False
         self.waiting_for_animation = False
         
-        self.get_logger().info('Path Scheduler started with hinge animation integration')
+        self.get_logger().info('Path Scheduler started with triangle button stopping')
         self.get_logger().info('States: WAITING_TO_START → RUNNING → STOPPING → LOWERING → WAITING_FOR_BUTTON → RAISING → RUNNING')
-        self.get_logger().info(f'Stop interval: {self.stop_interval} meters')
+        self.get_logger().info('Robot will stop when triangle button (button[2]) is pressed')
         self.get_logger().info('Press button [0] to start path generation and begin movement')
 
     def odom_callback(self, _msg):
         self.odom_received = True
+
+    def octopus_callback(self, msg):
+        """Handle triangle button status from octopus topic"""
+        self.triangle_button_pressed = msg.data
 
     def check_tf_ready(self):
         try:
@@ -102,24 +108,19 @@ class PathScheduler(Node):
             self.get_logger().error(f'Path generation failed: {str(e)}')
 
     def track_loop(self):
-        # Only track distance when actually running
+        # Only track button press when actually running
         if self.state != 'RUNNING':
             self.log_status()
             return
             
-        x, y = self.current_xy()
-        if x is None:
-            return
-        if self.last_pos is None:
-            self.last_pos = (x, y)
-            return
-            
-        dx, dy = x - self.last_pos[0], y - self.last_pos[1]
-        self.dist_since_stop += math.hypot(dx, dy)
-        self.last_pos = (x, y)
-        
-        if self.dist_since_stop >= self.stop_interval:
+        # Check for triangle button press (edge detection)
+        if self.triangle_button_pressed and not self.prev_triangle_button:
+            self.get_logger().info('Triangle button pressed - stopping robot')
             self.enter_stopping_sequence()
+        
+        # Update previous button state
+        self.prev_triangle_button = self.triangle_button_pressed
+        
         self.log_status()
 
     def animation_status_callback(self, msg):
@@ -185,7 +186,7 @@ class PathScheduler(Node):
         """Stop robot and start lowering hinges"""
         self.state = 'STOPPING'
         self.call_pp(False)  # Stop path following
-        self.get_logger().info(f'STOPPING: Traveled {self.dist_since_stop:.2f}m, stopping robot')
+        self.get_logger().info('STOPPING: Triangle button pressed, stopping robot')
         
         # Start lowering hinges
         self.enter_lowering_sequence()
@@ -224,7 +225,6 @@ class PathScheduler(Node):
     def enter_running(self):
         """Resume robot movement"""
         self.state = 'RUNNING'
-        self.dist_since_stop = 0.0
         self.call_pp(True)  # Resume path following
         self.get_logger().info('RUNNING: Hinges raised, resuming robot movement')
 
@@ -239,7 +239,7 @@ class PathScheduler(Node):
                 ready = self.odom_received and self.check_tf_ready() and self.generate_path_client.wait_for_service(timeout_sec=0.1)
                 self.get_logger().info(f'State: {self.state}, Checking readiness... Ready: {ready}')
             elif self.state == 'RUNNING':
-                self.get_logger().info(f'State: {self.state}, Distance: {self.dist_since_stop:.2f}m')
+                self.get_logger().info(f'State: {self.state}, Waiting for triangle button press to stop')
             elif self.state == 'LOWERING':
                 self.get_logger().info(f'State: {self.state}, Animation: {"In Progress" if self.animation_in_progress else "Waiting"}')
             elif self.state == 'WAITING_FOR_BUTTON':
