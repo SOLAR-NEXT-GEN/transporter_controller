@@ -31,6 +31,8 @@ install(PROGRAMS
   scripts/diff_pure_pursit.py
   scripts/path_scheduler.py
   scripts/straight_path_generator.py
+  scripts/path_real_planning.py
+  scripts/calculate_dist.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
