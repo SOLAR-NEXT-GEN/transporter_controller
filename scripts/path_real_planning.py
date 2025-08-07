@@ -112,9 +112,11 @@ class PathScheduler(Node):
             if future.result().success:
                 self.path_generated = True
                 self.check_timer.cancel()
-                self.state = 'WALKING'  # Changed from 'READY' to 'WALKING'
-                self.is_walking = True  # Add this line - set walking flag to True
-                self.get_logger().info('Path generated successfully - Robot is now walking')
+                self.get_logger().info('Path generated successfully - Starting robot sequence')
+                
+                # Automatically start the robot sequence
+                self.handle_start()  # This will do: UP -> enable pure pursuit
+                
         except Exception as e:
             self.get_logger().error(f'Path generation failed: {str(e)}')
 
